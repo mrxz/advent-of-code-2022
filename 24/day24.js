@@ -11,49 +11,38 @@ input = testInput = [
     "######.#",
 ]
 
-let board = {};
 let blizzards = []
-const getKey = (x,y) => `${x}x${y}`;
-const setValue = (board, x, y, value) => {
-    board[getKey(x, y)] = value;
-}
-const getValue = (board, x, y, fallback = null) => {
-    return board[getKey(x, y)] || fallback
-}
-const printBoard = (board, blizzards = []) => {
-
-    for(let y = 0; y < input.length; y++) {
-        let line = ""
-        for(let x = 0; x < input[y].length; x++) {
-            const blizzardsOnTile = blizzards.filter(b => b.pos[0] === x && b.pos[1] === y);
-            if(blizzardsOnTile.length === 1) {
-                line += "^>v<"[blizzardsOnTile[0].direction];
-            } else if(blizzardsOnTile.length > 1) {
-                line += blizzardsOnTile.length;
-            } else {
-                line += getValue(board, x, y, '.');
-            }
-        }
-        console.log(line);
-    }
-
-}
-
-const height = input.length;
-const width = input[0].length;
+const height = input.length - 2;
+const width = input[0].length - 2;
 for(let y = 0; y < input.length; y++) {
     for(let x = 0; x < input[y].length; x++) {
         let blizzard = "^>v<".indexOf(input[y][x]);
         if(blizzard !== -1) {
             blizzards.push({
-                pos: [x, y],
+                pos: [x - 1, y - 1],
                 direction: blizzard
             });
-        } else {
-            setValue(board, x, y, input[y][x]);
         }
     }
 }
+const isWall = (x, y) => {
+    if(x < 0 || x >= width) {
+        return true;
+    }
+    // Exits
+    if(x === 0 && y === -1) {
+        return false;
+    }
+    if(x === width-1 && y === height) {
+        return false;
+    }
+
+    if(y < 0 || y >= height) {
+        return true;
+    }
+    return false;
+}
+
 
 const move = (pos, dir) => {
     if(dir === 0) {
@@ -66,61 +55,57 @@ const move = (pos, dir) => {
         pos[0]--;
     }
 
-    if(pos[0] === 0) {
-        pos[0] = width - 2;
-    } else if(pos[0] === width - 1) {
-        pos[0] = 1;
-    } else if(pos[1] === 0) {
-        pos[1] = height - 2;
-    } else if(pos[1] === height - 1) {
-        pos[1] = 1;
+    if(pos[0] === -1) {
+        pos[0] = width - 1;
+    } else if(pos[0] === width) {
+        pos[0] = 0;
+    } else if(pos[1] === -1) {
+        pos[1] = height - 1;
+    } else if(pos[1] === height) {
+        pos[1] = 0;
     }
     return pos;
 }
 
-let seenKey = (state, r) => {
-    const prefix = `${state.pos[0]}|${state.pos[1]}|${r}`;
-
-    const sortedBlizzards = Object.values(state.blizzards).map(x => x.pos)
-        .sort((a,b) => a.x*(width*10)+a.y - b.x*(width*10)+b.y);
-    return prefix + sortedBlizzards.map(x => `${x[0]}|${x[1]}`).join('|');
-}
+const seenKey = (state, r) => state[0]*1_000_000+state[1]*1_000+(r%(width*height));
 let phase = 0;
 
 let seen = {};
 let round = 0;
-let queue = [{
-    pos: [1, 0],
-    blizzards,
-    phase,
-}];
+let queue = [[0, -1]];
 while(queue.length) {
     console.log(`Round ${round}: ${queue.length}`);
 
+    // Move blizzards
+    for(let b of blizzards) {
+        move(b.pos, b.direction);
+    }
+
+    let breakRound = false;
     let nextQueue = [];
     for(let state of queue) {
-        if(state.phase !== phase) {
-            continue;
-        }
-
         // Win condition
-        if(state.phase !== 1) {
-            if(state.pos[1] === height - 1) {
-                if(state.phase === 0) {
-                    console.log("REACHED EXIT GOING BACK FOR SNACKS");
+        if(phase !== 1) {
+            if(state[1] === height) {
+                if(phase === 0) {
+                    console.log(`REACHED EXIT ON ROUND ${round} GOING BACK FOR SNACKS`);
                     phase++;
-                    state.phase++;
+                    nextQueue = [];
+                    breakRound = true;
+                    seen = {};
                 } else {
-                    console.log("FOUND ", round);
+                    console.log(`REACHED EXIT WITH SNACKS ON ROUND ${round}`);
                     nextQueue = [];
                     break;
                 }
             }
         } else {
-            if(state.pos[1] === 0) {
-                console.log("FOUND SNACKS BACK TO EXIT");
+            if(state[1] === -1) {
+                console.log(`FOUND SNACKS ON ROUND ${round} BACK TO EXIT`);
                 phase++;
-                state.phase++;
+                nextQueue = [];
+                breakRound = true;
+                seen = {};
             }
         }
 
@@ -130,90 +115,46 @@ while(queue.length) {
         }
         seen[key] = true;
 
-        // Move blizzards
-        let newState = {pos: [...state.pos]};
-        newState.blizzards = state.blizzards.map(b => ({pos: [...b.pos], direction: b.direction }));
-        for(let b of newState.blizzards) {
-            move(b.pos, b.direction);
-        }
-
-        //console.log(newState.blizzards)
-        //printBoard(board, newState.blizzards);
 
         // Consider our moves
         {
-            let anyMove = false;
-
             // Up
-            if((phase === 1 || state.pos[1] > 1) && getValue(board, state.pos[0], state.pos[1] - 1, '.') === '.') {
-                // Check for blizzards.
-                const blizzardsOnTile = newState.blizzards.filter(b => b.pos[0] === state.pos[0] && b.pos[1] === state.pos[1] - 1);
-                if(!blizzardsOnTile.length) {
-                    anyMove = true;
-                    nextQueue.push({
-                        pos: [state.pos[0], state.pos[1] - 1],
-                        blizzards: newState.blizzards,
-                        phase: state.phase
-                    });
+            if((phase === 1 || state[1] > 0) && !isWall(state[0], state[1] - 1)) {
+                if(!blizzards.some(b => b.pos[0] === state[0] && b.pos[1] === state[1] - 1)) {
+                    nextQueue.push([state[0], state[1] - 1]);
                 }
             }
             // Right
-            if(getValue(board, state.pos[0] + 1, state.pos[1], '.') === '.') {
-                // Check for blizzards.
-                const blizzardsOnTile = newState.blizzards.filter(b => b.pos[0] === state.pos[0] + 1 && b.pos[1] === state.pos[1]);
-                if(!blizzardsOnTile.length) {
-                    anyMove = true;
-                    nextQueue.push({
-                        pos: [state.pos[0] + 1, state.pos[1]],
-                        blizzards: newState.blizzards,
-                        phase: state.phase
-                    });
+            if(!isWall(state[0] + 1, state[1])) {
+                if(!blizzards.some(b => b.pos[0] === state[0] + 1 && b.pos[1] === state[1])) {
+                    nextQueue.push([state[0] + 1, state[1]]);
                 }
             }
             // Down
-            if(state.pos[1] < height - 1 && getValue(board, state.pos[0], state.pos[1] + 1, '.') === '.') {
-                // Check for blizzards.
-                const blizzardsOnTile = newState.blizzards.filter(b => b.pos[0] === state.pos[0] && b.pos[1] === state.pos[1] + 1);
-                if(!blizzardsOnTile.length) {
-                    anyMove = true;
-                    nextQueue.push({
-                        pos: [state.pos[0], state.pos[1] + 1],
-                        blizzards: newState.blizzards,
-                        phase: state.phase
-                    });
+            if((phase !== 1 || state[1] < height - 1) && !isWall(state[0], state[1] + 1)) {
+                if(!blizzards.some(b => b.pos[0] === state[0] && b.pos[1] === state[1] + 1)) {
+                    nextQueue.push([state[0], state[1] + 1]);
                 }
             }
             // Left
-            if(getValue(board, state.pos[0] - 1, state.pos[1], '.') === '.') {
-                // Check for blizzards.
-                const blizzardsOnTile = newState.blizzards.filter(b => b.pos[0] === state.pos[0] - 1 && b.pos[1] === state.pos[1]);
-                if(!blizzardsOnTile.length) {
-                    anyMove = true;
-                    nextQueue.push({
-                        pos: [state.pos[0] - 1, state.pos[1]],
-                        blizzards: newState.blizzards,
-                        phase: state.phase
-                    });
+            if(!isWall(state[0] - 1, state[1])) {
+                if(!blizzards.some(b => b.pos[0] === state[0] - 1 && b.pos[1] === state[1])) {
+                    nextQueue.push([state[0] - 1, state[1]]);
                 }
             }
             // Wait
             {
-                const blizzardsOnTile = newState.blizzards.filter(b => b.pos[0] === state.pos[0] && b.pos[1] === state.pos[1]);
-                if(!blizzardsOnTile.length) {
-                    nextQueue.push({
-                        pos: [state.pos[0], state.pos[1]],
-                        blizzards: newState.blizzards,
-                        phase: state.phase
-                    })
+                if(!blizzards.some(b => b.pos[0] === state[0] && b.pos[1] === state[1])) {
+                    nextQueue.push([state[0], state[1]])
                 }
             }
+        }
+
+        if(breakRound) {
+            break;
         }
     }
 
     queue = nextQueue;
     round++;
 }
-
-printBoard(board, blizzards);
-
-console.log(0);
